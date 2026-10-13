@@ -1,10 +1,10 @@
 # =============================================================================
 # setup_windows_task.ps1
 # Registers a Windows Scheduled Task to auto-refresh the Pure1 API token
-# every 9 hours — the Windows equivalent of the macOS LaunchAgent plist.
+# every 8 hours — the Windows equivalent of the macOS LaunchAgent plist.
 #
 # Run once to install. The task fires immediately on registration and then
-# repeats every 9 hours indefinitely.
+# repeats every 8 hours indefinitely.
 #
 # Usage (run as your normal user, NOT as Administrator):
 #   Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
@@ -42,13 +42,13 @@ $Action = New-ScheduledTaskAction `
     -Execute $PwshPath `
     -Argument "-NonInteractive -ExecutionPolicy Bypass -File `"$ScriptPath`""
 
-# ── Trigger: run once now, then repeat every 9 hours indefinitely ─────────────
+# ── Trigger: run once now, then repeat every 8 hours indefinitely ─────────────
 # Omitting -RepetitionDuration means "indefinitely". [TimeSpan]::MaxValue is
 # rejected as out of range by Task Scheduler on current Windows versions.
 $Trigger = New-ScheduledTaskTrigger `
     -Once `
     -At (Get-Date) `
-    -RepetitionInterval (New-TimeSpan -Hours 9)
+    -RepetitionInterval (New-TimeSpan -Hours 8)
 
 # ── Settings ──────────────────────────────────────────────────────────────────
 #   StartWhenAvailable        run as soon as possible if a scheduled run was missed
@@ -78,13 +78,13 @@ Register-ScheduledTask `
     -Trigger    $Trigger `
     -Settings   $Settings `
     -Principal  $Principal `
-    -Description "Refreshes the Pure1 API Bearer token every 9 hours and sets PURE1_ACCESS_TOKEN in the User environment." `
+    -Description "Refreshes the Pure1 API Bearer token every 8 hours and sets PURE1_ACCESS_TOKEN in the User environment." `
     -Force | Out-Null
 
 Write-Host ""
 Write-Host "Scheduled task '$TaskName' registered successfully."
 Write-Host ""
-Write-Host "It will run immediately and then every 9 hours."
+Write-Host "It will run immediately and then every 8 hours."
 Write-Host ""
 Write-Host "Useful commands:"
 Write-Host "  Start now : Start-ScheduledTask -TaskName '$TaskName'"

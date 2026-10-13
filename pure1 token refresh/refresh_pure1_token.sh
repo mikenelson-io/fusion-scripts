@@ -48,12 +48,14 @@ die() { log "ERROR: $*"; exit 1; }
 
 # ── Keychain helpers ──────────────────────────────────────────────────────────
 # Secrets go to `security` on stdin (interactive mode), never as arguments,
-# so they don't show up in `ps` output.
+# so they don't show up in `ps` output. The login keychain is named
+# explicitly: jobs started by cron don't get the user's keychain search list.
+KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
 keychain_get() {
-  security find-generic-password -s "$KEYCHAIN_SERVICE" -a "$1" -w 2>/dev/null
+  security find-generic-password -s "$KEYCHAIN_SERVICE" -a "$1" -w "$KEYCHAIN" 2>/dev/null
 }
 keychain_set() {
-  printf 'add-generic-password -U -s %s -a %s -w %s\n' "$KEYCHAIN_SERVICE" "$1" "$2" \
+  printf 'add-generic-password -U -s %s -a %s -w %s "%s"\n' "$KEYCHAIN_SERVICE" "$1" "$2" "$KEYCHAIN" \
     | security -i >/dev/null
 }
 
