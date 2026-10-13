@@ -101,6 +101,44 @@ launchctl unload ~/Library/LaunchAgents/com.pure1.token-refresh.plist
 
 `KeepAlive` with `SuccessfulExit = false` retries failed runs, and `ThrottleInterval` spaces those retries 5 minutes apart.
 
+## Windows: refresh_pure1_token.ps1
+
+The PowerShell version does the same job on Windows, using Windows PowerShell 5.1 or PowerShell 7.
+
+| | macOS (`.sh`) | Windows (`.ps1`) |
+| --- | --- | --- |
+| Credential store | login keychain, service `pure1-token-refresh` | `pure1_credentials.xml` next to the script, encrypted with DPAPI (only your Windows user on that machine can decrypt it) |
+| Key encryption | `openssl` | Python `cryptography` (no extra dependency) |
+| Token for GUI apps | `launchctl setenv` (picked up without restart) | User-scope environment variable (picked up on next app launch) |
+| Claude Desktop config | `~/Library/Application Support/Claude/` | `%APPDATA%\Claude\` |
+| Scheduling | launchd plist | `setup_windows_task.ps1` |
+
+### Setup
+
+Steps 1 and 2 from the macOS setup apply as-is: register an API key in Pure1, and put `pure1_token_factory.py` next to the script. Then:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+.\refresh_pure1_token.ps1 -SetCredentials        # prompts for the ID and key path
+.\setup_windows_task.ps1                         # run as your normal user, not Administrator
+```
+
+`-SetCredentials` behaves like the macOS version. It encrypts the key, stores the ID and passphrase, verifies them with Pure1 before replacing anything, and then does a normal refresh. To rotate a regenerated API key:
+
+```powershell
+.\refresh_pure1_token.ps1 -SetCredentials -ApiKeyId pure1:apikey:NEW -KeyPath .\new_private_key.pem
+```
+
+`setup_windows_task.ps1` registers a scheduled task, `Pure1TokenRefresh`, that runs now and then every 9 hours as you. It only runs while you're logged on, which DPAPI needs anyway.
+
+```powershell
+Start-ScheduledTask -TaskName Pure1TokenRefresh                           # run now
+Get-ScheduledTask   -TaskName Pure1TokenRefresh | Get-ScheduledTaskInfo   # status
+Unregister-ScheduledTask -TaskName Pure1TokenRefresh -Confirm:$false      # remove
+```
+
+DPAPI ties `pure1_credentials.xml` to your Windows account on that machine. Copying it to another user or PC won't work, so run `-SetCredentials` there instead.
+
 ### Security notes
 
 - **The private key is encrypted at rest.** A copied `pure1_private_key.enc.pem` is useless without your keychain, which unlocks when you log in. Never commit either the key or the original unencrypted one.
