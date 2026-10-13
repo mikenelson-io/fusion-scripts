@@ -22,6 +22,7 @@
 # =============================================================================
 
 set -euo pipefail
+umask 077  # token file, log, and config backups readable by owner only
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -176,6 +177,13 @@ else:
         json.dump(config, f, indent=2)
         f.write("\n")
     print(f"PATCHED backup={backup}")
+
+# Each backup holds the token of its day; keep only the newest 5.
+import glob, os, re
+ours = sorted(p for p in glob.glob(f"{config_path}.bak.*")
+              if re.fullmatch(r"\d{14}", p.rsplit(".", 1)[-1]))
+for old in ours[:-5]:
+    os.remove(old)
 PYEOF
   )
   log "Config self-heal result: $PATCH_RESULT"
