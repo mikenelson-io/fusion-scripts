@@ -6,7 +6,7 @@ Keeps a Pure1 API access token fresh on macOS, so Claude Desktop, VS Code, Augme
 
 Each run:
 
-1. Mints a new access token with `pure1_token_factory.py` (JWT signed with your private key, exchanged at the Pure1 OAuth endpoint)
+1. Mints a new access token with `pure1_token_factory.py`. It signs a JWT with your private key and exchanges it at the Pure1 OAuth endpoint. The application ID and the key's passphrase come from the macOS keychain, and the key on disk is encrypted.
 2. Validates it against `https://api.pure1.purestorage.com/api/1.0/arrays`. On a 401 or 403 it exits and leaves the previous token in place.
 3. Writes `export PURE1_ACCESS_TOKEN=...` to `~/.pure1_token.env`
 4. Runs `launchctl setenv PURE1_ACCESS_TOKEN ...` so GUI apps see the new token without a restart
@@ -16,7 +16,8 @@ All output is appended to `pure1_token_refresh.log` next to the script. Everythi
 
 ### Requirements
 
-- macOS (the token refresh works elsewhere, but `launchctl` and the Claude Desktop self-heal are macOS-specific)
+- macOS. Credentials live in the login keychain via `security`.
+- `openssl`, for encrypting the private key during `--set-credentials`
 - `bash`, `curl`, and a `python3` with `requests`, `PyJWT`, and `cryptography`. The script picks the first interpreter on the system that can import `requests`.
 - A Pure1 API registration: an application ID (`pure1:apikey:...`) and its RSA private key
 - `pure1_token_factory.py` in the same folder (see below)
@@ -36,22 +37,35 @@ All output is appended to `pure1_token_refresh.log` next to the script. Everythi
 
 2. **Get the token factory.** `pure1_token_factory.py` is Pure Storage's sample token-exchange client from the Pure1 API documentation. It's not included here because it's Pure Storage copyrighted code. Put it next to this script.
 
-3. **Configure the script.** Either edit the two lines at the top:
-
-   ```sh
-   PRIVATE_KEY="${PURE1_PRIVATE_KEY:-$SCRIPT_DIR/pure1_private_key.pem}"
-   API_KEY="${PURE1_API_KEY:-pure1:apikey:REPLACE_ME}"
-   ```
-
-   or set `PURE1_API_KEY` and `PURE1_PRIVATE_KEY` in the environment. The script refuses to run while the placeholder is still set.
-
-4. **Run it once:**
+3. **Store the credentials:**
 
    ```sh
    chmod +x refresh_pure1_token.sh
-   ./refresh_pure1_token.sh
-   source ~/.pure1_token.env
+   ./refresh_pure1_token.sh --set-credentials
    ```
+
+   It prompts for the application ID and the path to the private key. You can also pass them as `--id pure1:apikey:... --key pure1_private_key.pem`. Then it:
+
+   - encrypts the key with a random passphrase and writes it to `pure1_private_key.enc.pem` next to the script
+   - stores the passphrase and the application ID in the login keychain, under the service `pure1-token-refresh`
+   - mints a token to verify the pair **before** replacing anything, so a wrong ID or key leaves working credentials untouched
+   - finishes with a normal refresh
+
+   After that, delete the unencrypted key or move it offline. The script no longer reads it.
+
+4. **Load the token in your current shell:** `source ~/.pure1_token.env`
+
+### Rotating credentials
+
+If you regenerate the API key in Pure1, for example after it expires or its role changes, run the same command with the new values:
+
+```sh
+./refresh_pure1_token.sh --set-credentials --id pure1:apikey:NEW --key new_private_key.pem
+```
+
+You never need to update the **access token** by hand. Every run mints a new one from the stored credentials.
+
+The first time launchd's run reads the keychain, macOS may ask to allow access. Choose **Always Allow**. To override the stored values for one run, set `PURE1_API_KEY` or `PURE1_PRIVATE_KEY`.
 
 ### Scheduling with launchd
 
@@ -89,7 +103,8 @@ launchctl unload ~/Library/LaunchAgents/com.pure1.token-refresh.plist
 
 ### Security notes
 
-- **Keep the private key private.** `chmod 600` it, and never commit it.
+- **The private key is encrypted at rest.** A copied `pure1_private_key.enc.pem` is useless without your keychain, which unlocks when you log in. Never commit either the key or the original unencrypted one.
+- **The key passphrase never appears as a command-line argument.** It reaches `security`, `openssl`, and Python through stdin or a pipe, so it doesn't show in `ps`. The short-lived access token is still passed as an argument to `curl`, `launchctl setenv`, and the config patch, so it's briefly visible in the process list.
 - **Files created before you adopted this version keep their old permissions.** `umask` only applies to new files, so if `~/.pure1_token.env` or the log already exist, `chmod 600` them once.
 - **`launchctl setenv` exposes the token to every GUI app you launch.** That's how this works, but it's broad.
 - **Claude Desktop config backups hold old tokens.** Each self-heal leaves a `claude_desktop_config.json.bak.<timestamp>`. The script keeps only the newest 5, and other backup files in that folder are left alone.
